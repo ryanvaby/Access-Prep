@@ -38,7 +38,7 @@ export default function App() {
                 open={glossaryOpen}
                 onClose={() => setGlossaryOpen(false)}
                 items={lang === "es" ? glossaryES : glossaryEN}
-                title={lang === "es" ? "Glosario" : "Glossary"}
+                lang={lang}
                 />
         </div>
     );
