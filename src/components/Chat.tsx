@@ -1,6 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, IntakeData } from "../types";
+import type { ChatMessage, IntakeData, DocumentType, ChatFileAttachment } from "../types";
 import { t } from "../i18n";
 
 type Props = {
@@ -13,8 +13,13 @@ function uid() {
     return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
+function generateSessionId() {
+    return "session_" + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+}
+
 export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
     const lang = intake.language;
+    const sessionIdRef = useRef(generateSessionId());
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => [
         { id: uid(), role: "assistant", ts: Date.now(), content: t(lang, "chat.greeting") },
@@ -22,11 +27,102 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
 
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [documentType, setDocumentType] = useState<DocumentType>("id");
+    const [uploadingFile, setUploadingFile] = useState(false);
     const bottomRef = useRef<HTMLDivElement | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, loading]);
+
+    function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (file.type !== "application/pdf") {
+                alert(t(lang, "chat.upload.invalid"));
+                return;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                alert("File too large. " + t(lang, "chat.upload.maxSize"));
+                return;
+            }
+            setSelectedFile(file);
+        }
+    }
+
+    async function uploadFile() {
+        if (!selectedFile) return;
+
+        setUploadingFile(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", selectedFile);
+            formData.append("document_type", documentType);
+            formData.append("session_id", sessionIdRef.current);
+
+            const res = await fetch("http://127.0.0.1:5000/api/upload", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = (await res.json()) as ChatFileAttachment;
+
+            // Create a user message with the attachment
+            const userMsg: ChatMessage = {
+                id: uid(),
+                role: "user",
+                content: `[Document uploaded: ${data.fileName}]`,
+                ts: Date.now(),
+                attachments: [data],
+            };
+
+            setMessages((prev) => [...prev, userMsg]);
+            setSelectedFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+
+            // Now send to chat with the validated file info
+            setLoading(true);
+            const chatRes = await fetch("http://127.0.0.1:5000/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    student_status: intake.pathway,
+                    location: intake.state,
+                    credit_history: intake.creditHistory,
+                    id_type: intake.idType,
+                    income_type: intake.incomeType,
+                    response_language: intake.language,
+                    session_id: sessionIdRef.current,
+                    validated_files: [data],
+                    messages: [...messages, userMsg].map((m) => ({
+                        role: m.role,
+                        content: m.content,
+                        attachments: m.attachments,
+                    })),
+                }),
+            });
+
+            if (!chatRes.ok) throw new Error(`HTTP ${chatRes.status}`);
+            const chatData = (await chatRes.json()) as { reply: string };
+
+            setMessages((prev) => [
+                ...prev,
+                { id: uid(), role: "assistant", content: chatData.reply, ts: Date.now() },
+            ]);
+        } catch (err) {
+            const fallback =
+                lang === "es"
+                    ? "Hubo un error al procesar el documento. Por favor intenta de nuevo."
+                    : "There was an error processing the document. Please try again.";
+            setMessages((prev) => [...prev, { id: uid(), role: "assistant", content: fallback, ts: Date.now() }]);
+        } finally {
+            setUploadingFile(false);
+            setLoading(false);
+        }
+    }
 
     async function send(text: string) {
         const trimmed = text.trim();
@@ -38,7 +134,7 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
         setLoading(true);
 
         try {
-            const res = await fetch("http://localhost:5000/api/chat", {
+            const res = await fetch("http://127.0.0.1:5000/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -48,6 +144,7 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                     id_type: intake.idType,
                     income_type: intake.incomeType,
                     response_language: intake.language,
+                    session_id: sessionIdRef.current,
                     messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
                 }),
             });
@@ -148,6 +245,46 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                             {t(lang, "chat.quick.bank")}
                         </button>
                     </div>
+
+                    <div className="mb-3 flex flex-col sm:flex-row gap-2">
+                        <select
+                            value={documentType}
+                            onChange={(e) => setDocumentType(e.target.value as DocumentType)}
+                            className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                        >
+                            <option value="id">{t(lang, "chat.upload.docType.id")}</option>
+                            <option value="income">{t(lang, "chat.upload.docType.income")}</option>
+                            <option value="address">{t(lang, "chat.upload.docType.address")}</option>
+                        </select>
+
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".pdf"
+                            onChange={handleFileSelect}
+                            disabled={uploadingFile || loading}
+                            className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black disabled:bg-gray-100"
+                        />
+
+                        <button
+                            onClick={uploadFile}
+                            disabled={!selectedFile || uploadingFile || loading}
+                            className={[
+                                "rounded-xl px-4 py-2 text-sm font-medium text-white",
+                                selectedFile && !uploadingFile && !loading
+                                    ? "bg-black hover:bg-gray-800"
+                                    : "bg-gray-300 cursor-not-allowed",
+                            ].join(" ")}
+                        >
+                            {uploadingFile ? t(lang, "chat.upload.uploading") : t(lang, "chat.upload.label")}
+                        </button>
+                    </div>
+
+                    {selectedFile && (
+                        <div className="mb-3 text-xs text-gray-600">
+                            {t(lang, "chat.upload.placeholder")}: {selectedFile.name}
+                        </div>
+                    )}
 
                     <form
                         onSubmit={(e) => {
