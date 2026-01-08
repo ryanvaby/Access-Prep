@@ -1,11 +1,17 @@
 import os
 from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 
 # Load environment variables
 if load_dotenv is not None:
     load_dotenv()
+
+# Initialize Flask app
+app = Flask(__name__)
+CORS(app)
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
@@ -95,25 +101,52 @@ Instructions:
 - If some profile requirements are missing, search for alternatives the client can use.
 - Provide practical tips to improve approval chances
 - Be clear, concise, and supportive
-- You must respond in the language given by the client.
+- You must respond in {response_language}
 """
 )
 
 # Chain
 chain = prompt | llm
 
-def run_agent(input_json: dict) -> str:
-    response = chain.invoke({
-            "student_status": input_json["student_status"],
-            "location": input_json["location"],
-            "credit_history": input_json["credit_history"],
-            "id_type": input_json["id_type"],
-            "income_type": input_json["income_type"],
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    """Handle chat requests from the frontend."""
+    try:
+        data = request.json
+        
+        # Extract the required fields for the agent
+        agent_input = {
+            "student_status": data.get("student_status"),
+            "location": data.get("location"),
+            "credit_history": data.get("credit_history"),
+            "id_type": data.get("id_type"),
+            "income_type": data.get("income_type"),
+            "response_language": data.get("response_language"),
+        }
+        
+        # Get the user's message from the conversation
+        messages = data.get("messages", [])
+        if messages:
+            user_message = messages[-1].get("content", "")
+            agent_input["user_message"] = user_message
+        
+        # Run the agent and get response
+        response = chain.invoke({
+            "student_status": agent_input["student_status"],
+            "location": agent_input["location"],
+            "credit_history": agent_input["credit_history"],
+            "id_type": agent_input["id_type"],
+            "income_type": agent_input["income_type"],
             "bank_policy": BANK_POLICY,
-            "response_language": input_json["response_language"],
+            "response_language": agent_input["response_language"],
         })
+        
+        return jsonify({"reply": response.content[0]['text']}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    return response.content
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
 
 # # Example call
 # input_data = {

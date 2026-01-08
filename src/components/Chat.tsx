@@ -36,11 +36,16 @@ export default function Chat({ intake, onReset }: Props) {
         setLoading(true);
 
         try {
-            const res = await fetch("/api/chat", {
+            const res = await fetch("http://localhost:5000/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    intake,
+                    student_status: intake.pathway,
+                    location: intake.state,
+                    credit_history: intake.creditHistory,
+                    id_type: intake.idType,
+                    income_type: intake.incomeType,
+                    response_language: intake.language,
                     messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
                 }),
             });
