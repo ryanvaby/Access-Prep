@@ -5,7 +5,7 @@ import type { IntakeData } from "./types";
 import type { Lang } from "./i18n";
 import { t } from "./i18n";
 import GlossaryModal from "./components/GlossaryModal.tsx"
-import { glossaryEN } from "./glossary"
+import { glossaryEN, glossaryES } from "./glossary"
 
 
 export default function App() {
@@ -37,7 +37,8 @@ export default function App() {
                 <GlossaryModal
                 open={glossaryOpen}
                 onClose={() => setGlossaryOpen(false)}
-                items={glossaryEN}
+                items={lang === "es" ? glossaryES : glossaryEN}
+                title={lang === "es" ? "Glosario" : "Glossary"}
                 />
         </div>
     );

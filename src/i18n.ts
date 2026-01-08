@@ -59,6 +59,7 @@ const EN: Dict = {
     // Chat
     "chat.title": "Access Prep Chat",
     "chat.restart": "Restart",
+    "chat.glossary": "Glossary",
     "chat.placeholder": "Type your message…",
     "chat.send": "Send",
     "chat.thinking": "Thinking…",
@@ -127,6 +128,7 @@ const ES: Dict = {
     // Chat
     "chat.title": "Chat de Access Prep",
     "chat.restart": "Reiniciar",
+    "chat.glossary": "Glosario",
     "chat.placeholder": "Escribe tu mensaje…",
     "chat.send": "Enviar",
     "chat.thinking": "Pensando…",
