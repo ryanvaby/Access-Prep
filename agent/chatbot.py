@@ -22,7 +22,7 @@ if not GOOGLE_API_KEY:
 
 # Initialize Gemini LLM
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3-flash-preview",
+    model="gemini-2.5-flash-lite",
     temperature=0,
     api_key=GOOGLE_API_KEY,
 )
@@ -30,12 +30,21 @@ llm = ChatGoogleGenerativeAI(
 # Bank policy (could be separate file in repo)
 BANK_POLICY = """
 Purpose and Scope
-This policy outlines how credit card applications are evaluated for both traditional and non-traditional applicants. The Bank seeks to provide responsible access to credit while accounting for applicants who may not meet conventional credit, income, or employment requirements. Applications are evaluated holistically, and approval is not guaranteed.
+This policy outlines how credit card, secure card, and bank account applications are evaluated for both traditional and non-traditional applicants. The Bank seeks to provide responsible access to credit while accounting for applicants who may not meet conventional credit, income, or employment requirements. Applications are evaluated holistically, and approval is not guaranteed.
 
 Applicant Types
 Traditional applicants generally have an established credit history, stable full-time income, government-issued identification, and a consistent residential address. Non-traditional applicants may include students, first-time credit applicants, individuals with limited or no credit history, applicants with variable or non-salaried income, newcomers without local credit history, or individuals relying on alternative sources of financial support.
 
 Non-traditional status does not automatically result in denial. Instead, such applications may require additional information or may be directed toward alternative credit products.
+
+Migrant Workers
+Applicants who are migrant workers may face challenges providing traditional documentation. Acceptable alternative documents include employment verification letters, contracts, bank statements showing regular deposits, or proof of financial support. A passport or national identification may be used, supplemented with additional address verification. Secured credit cards or entry-level products may be recommended until a local credit history is established.
+
+Freelance and Self-Employed Applicants
+Applicants with non-traditional income sources such as freelance work, consulting, or self-employment may be required to provide recent invoices, tax filings, bank deposit records, or contracts to demonstrate income. Lower initial credit limits or secured products may be offered. Responsible financial history through consistent banking or payment behavior may improve eligibility.
+
+Newcomers to the Country
+Applicants who have recently relocated or have limited local credit history may be asked to provide proof of residency, utility bills, lease agreements, or letters confirming financial support. Alternative evidence of financial stability such as bank statements from previous countries or employment contracts may be accepted. Initial products may include secured credit cards or entry-level unsecured cards.
 
 Credit History Evaluation
 Applicants with an established credit history are evaluated based on length of history, repayment behavior, current obligations, and overall credit usage.
@@ -80,9 +89,9 @@ prompt = PromptTemplate(
         "bank_policy",
     ],
     template="""
-You are a financial assistant helping clients prepare for a credit card application.
+You are a financial assistant helping clients prepare for a credit card, secure card, or bank account application.
 
-Use ONLY the bank policy provided below to inform the client on documents and qualifications
+Please fulfill the user's request, which is {user_message}, using ONLY the bank policy provided below to inform the client on documents and qualifications
 needed for a successful application, which may vary based on their profile.
 Do not invent rules that are not in the policy.
 
@@ -97,10 +106,10 @@ Client Profile:
 - Income type: {income_type}
 
 Instructions:
-- Analyze all materials the client needs for a successful credit card application.
+- Analyze all materials the client needs for a successful application.
 - If some profile requirements are missing, search for alternatives the client can use.
 - Provide practical tips to improve approval chances
-- Be clear, concise, and supportive
+- Be clear, concise, and supportive of the client's request
 - You must respond in {response_language}
 """
 )
@@ -132,6 +141,7 @@ def chat():
         
         # Run the agent and get response
         response = chain.invoke({
+            "user_message": agent_input["user_message"],
             "student_status": agent_input["student_status"],
             "location": agent_input["location"],
             "credit_history": agent_input["credit_history"],
@@ -141,22 +151,9 @@ def chat():
             "response_language": agent_input["response_language"],
         })
         
-        return jsonify({"reply": response.content[0]['text']}), 200
+        return jsonify({"reply": response.content}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-
-# # Example call
-# input_data = {
-#     "student_status": "student",
-#     "location": "McLean, Virginia, USA",
-#     "credit_history": "thin_file",
-#     "id_type": "passport",
-#     "income_type": "part_time",
-#     "response_language": "Spanish",
-# }
-
-# result = run_agent(input_data)
-# print(result[0]['text'])
