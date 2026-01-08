@@ -115,15 +115,15 @@ def run_agent(input_json: dict) -> str:
 
     return response.content
 
-# # Example call
-# input_data = {
-#     "student_status": "student",
-#     "location": "McLean, Virginia, USA",
-#     "credit_history": "thin_file",
-#     "id_type": "passport",
-#     "income_type": "part_time",
-#     "response_language": "Spanish",
-# }
+# Example call
+input_data = {
+    "student_status": "student",
+    "location": "McLean, Virginia, USA",
+    "credit_history": "thin_file",
+    "id_type": "passport",
+    "income_type": "part_time",
+    "response_language": "Spanish",
+}
 
-# result = run_agent(input_data)
-# print(result[0]['text'])
+result = run_agent(input_data)
+print(result)
