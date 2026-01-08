@@ -4,10 +4,15 @@ import Chat from "./components/Chat";
 import type { IntakeData } from "./types";
 import type { Lang } from "./i18n";
 import { t } from "./i18n";
+import GlossaryModal from "./components/GlossaryModal.tsx"
+import { glossaryEN } from "./glossary"
+
 
 export default function App() {
     const [lang, setLang] = useState<Lang>("en");
     const [intake, setIntake] = useState<IntakeData | null>(null);
+    const [glossaryOpen, setGlossaryOpen] = useState(false)
+
 
     return (
         <div className="min-h-screen bg-gray-100">
@@ -21,9 +26,19 @@ export default function App() {
                 {!intake ? (
                     <IntakeForm lang={lang} onLangChange={setLang} onSubmit={setIntake} />
                 ) : (
-                    <Chat intake={intake} onReset={() => setIntake(null)} />
+                    <Chat
+                    intake={intake}
+                    onReset={() => setIntake(null)}
+                    onOpenGlossary={() => setGlossaryOpen(true)}
+                    />
+
                 )}
             </div>
+                <GlossaryModal
+                open={glossaryOpen}
+                onClose={() => setGlossaryOpen(false)}
+                items={glossaryEN}
+                />
         </div>
     );
 }
