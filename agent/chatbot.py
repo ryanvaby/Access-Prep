@@ -4,10 +4,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import HumanMessage
-import io
-import uuid
-from werkzeug.utils import secure_filename
 
 # Load environment variables
 if load_dotenv is not None:
@@ -30,10 +26,6 @@ llm = ChatGoogleGenerativeAI(
     temperature=0,
     api_key=GOOGLE_API_KEY,
 )
-
-# In-memory storage for uploaded files, keyed by session_id
-# Structure: {session_id: {file_id: {binary_data, file_name, document_type, is_valid, validation_message}}}
-file_store = {}
 
 # Bank policy (could be separate file in repo)
 BANK_POLICY = """
@@ -125,138 +117,11 @@ Instructions:
 # Chain
 chain = prompt | llm
 
-def validate_document_with_vlm(pdf_binary: bytes, document_type: str, response_language: str = "en") -> dict:
-    """
-    Validate a PDF document using Gemini VLM to check if it looks legitimate for its document type.
-    Returns a dict with is_valid (bool) and validation_message (str).
-    """
-    doc_type_descriptions = {
-        "id": "Government-issued photo ID (driver's license, passport, national ID, etc.)",
-        "income": "Income verification document (pay stub, bank statement showing deposits, tax return, employment letter, etc.)",
-        "address": "Address proof (utility bill, lease agreement, bank statement, government correspondence, etc.)"
-    }
-    
-    doc_description = doc_type_descriptions.get(document_type, "document")
-    
-    vlm_prompt = f"""You are a document validation assistant. Your only job is to determine if a submitted document looks legitimate for its intended purpose.
-
-Document Type: {document_type}
-Document Type Description: {doc_description}
-
-Analyze the PDF and respond with ONLY one of the following:
-
-VALID
----
-If the document appears to be a genuine {document_type} with:
-- Proper structure and formatting for its type
-- Readable content relevant to {document_type}
-- No obvious signs of tampering, forgery, or irrelevance
-- Sufficient information for its stated purpose
-
-INVALID: [specific issues]
----
-If the document does NOT appear to be a valid {document_type}, explain concisely why. Example: "INVALID: Document is a restaurant menu, not an address proof."
-
-Do NOT:
-- Extract personal information
-- Make approval decisions
-- Verify authenticity beyond basic visual legitimacy
-- Request additional documents
-- Provide recommendations
-
-Respond with only "VALID" or "INVALID: [reason]". Nothing else."""
-    
-    try:
-        # Create a human message with the PDF as image content
-        # Gemini can handle PDFs directly
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": vlm_prompt},
-                {
-                    "type": "document",
-                    "mime_type": "application/pdf",
-                    "data": pdf_binary,
-                },
-            ]
-        )
-        
-        response = llm.invoke([message])
-        validation_text = response.content.strip()
-        
-        is_valid = validation_text.startswith("VALID")
-        validation_message = validation_text if not is_valid else f"✓ {document_type.capitalize()} validated"
-        
-        return {
-            "is_valid": is_valid,
-            "validation_message": validation_message,
-            "raw_response": validation_text
-        }
-    except Exception as e:
-        return {
-            "is_valid": False,
-            "validation_message": f"Error validating document: {str(e)}",
-            "raw_response": str(e)
-        }
-
-@app.route("/api/upload", methods=["POST"])
-def upload():
-    """Handle document upload and VLM validation."""
-    try:
-        # Get file, document type, and session ID
-        if "file" not in request.files:
-            return jsonify({"error": "No file part"}), 400
-        
-        file = request.files["file"]
-        document_type = request.form.get("document_type", "id")
-        session_id = request.form.get("session_id")
-        
-        if not session_id:
-            return jsonify({"error": "No session_id provided"}), 400
-        
-        if file.filename == "":
-            return jsonify({"error": "No selected file"}), 400
-        
-        if not file.filename.lower().endswith(".pdf"):
-            return jsonify({"error": "Only PDF files are supported"}), 400
-        
-        # Read the PDF binary
-        pdf_binary = file.read()
-        
-        # Validate with VLM
-        validation_result = validate_document_with_vlm(pdf_binary, document_type)
-        
-        # Generate file ID and store
-        file_id = str(uuid.uuid4())
-        if session_id not in file_store:
-            file_store[session_id] = {}
-        
-        file_store[session_id][file_id] = {
-            "binary": pdf_binary,
-            "file_name": secure_filename(file.filename),
-            "document_type": document_type,
-            "is_valid": validation_result["is_valid"],
-            "validation_message": validation_result["validation_message"],
-        }
-        
-        # Return file attachment metadata
-        return jsonify({
-            "fileId": file_id,
-            "fileName": secure_filename(file.filename),
-            "fileSize": len(pdf_binary),
-            "documentType": document_type,
-            "uploadedAt": int(__import__("time").time() * 1000),
-            "isValid": validation_result["is_valid"],
-            "validationMessage": validation_result["validation_message"],
-        }), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """Handle chat requests from the frontend."""
     try:
         data = request.json
-        session_id = data.get("session_id")
         
         # Extract the required fields for the agent
         agent_input = {
@@ -268,80 +133,14 @@ def chat():
             "response_language": data.get("response_language"),
         }
         
-        # Get validated files from request
-        validated_files = data.get("validated_files", [])
-        
-        # Build document validation context
-        validated_docs_context = ""
-        if validated_files:
-            validated_list = []
-            for file_info in validated_files:
-                doc_type = file_info.get("documentType", "unknown")
-                is_valid = file_info.get("isValid", False)
-                if is_valid:
-                    validated_list.append(f"✓ {doc_type.capitalize()}")
-                else:
-                    validation_msg = file_info.get("validationMessage", "Failed validation")
-                    validated_list.append(f"✗ {doc_type.capitalize()}: {validation_msg}")
-            
-            if validated_list:
-                validated_docs_context = f"\nValidated Documents:\n" + "\n".join(validated_list)
-        
         # Get the user's message from the conversation
         messages = data.get("messages", [])
         if messages:
             user_message = messages[-1].get("content", "")
             agent_input["user_message"] = user_message
         
-        # Update the prompt template to include validated documents context
-        system_prompt = f"""
-You are a financial assistant helping clients prepare for a credit card, secure card, or bank account application.
-
-Please fulfill the user's request, which is {{user_message}}, using ONLY the bank policy provided below to inform the client on documents and qualifications
-needed for a successful application, which may vary based on their profile.
-Do not invent rules that are not in the policy.
-
-{validated_docs_context}
-
-Bank Policy:
-{{bank_policy}}
-
-Client Profile:
-- Student status: {{student_status}}
-- Location: {{location}}
-- Credit history: {{credit_history}}
-- ID type: {{id_type}}
-- Income type: {{income_type}}
-
-Instructions:
-- Analyze all materials the client needs for a successful application.
-- If some profile requirements are missing, search for alternatives the client can use.
-- Maintain a running checklist of required documents. Mark validated documents with ✓.
-- When a document is validated, acknowledge it and update the checklist.
-- If a document failed validation, explain why and encourage re-submission.
-- Provide practical tips to improve approval chances.
-- Be clear, concise, and supportive of the client's request.
-- You must respond in {{response_language}}
-"""
-        
-        chat_prompt = PromptTemplate(
-            input_variables=[
-                "student_status",
-                "location",
-                "credit_history",
-                "id_type",
-                "income_type",
-                "bank_policy",
-                "user_message",
-                "response_language",
-            ],
-            template=system_prompt,
-        )
-        
-        chat_chain = chat_prompt | llm
-        
         # Run the agent and get response
-        response = chat_chain.invoke({
+        response = chain.invoke({
             "user_message": agent_input["user_message"],
             "student_status": agent_input["student_status"],
             "location": agent_input["location"],

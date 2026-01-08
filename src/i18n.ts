@@ -68,20 +68,8 @@ const EN: Dict = {
     "chat.quick.secured": "Secured card",
     "chat.quick.bank": "Bank account",
     "chat.greeting":
-        "Hi, I'm Access Prep. What are you applying for today: a credit card, secured card, or a bank account?",
-    "glossary.search": "Search a term...",
-    
-    // File upload
-    "chat.upload.label": "Upload Document",
-    "chat.upload.placeholder": "Select PDF",
-    "chat.upload.docType.id": "ID",
-    "chat.upload.docType.income": "Income Proof",
-    "chat.upload.docType.address": "Address Proof",
-    "chat.upload.docType.label": "Document Type",
-    "chat.upload.maxSize": "Max 10MB",
-    "chat.upload.validating": "Validating document…",
-    "chat.upload.invalid": "Invalid file. Please upload a PDF.",
-    "chat.upload.uploading": "Uploading…"
+        "Hi, I’m Access Prep. What are you applying for today: a credit card, secured card, or a bank account?",
+    "glossary.search": "Search a term..."
 };
 
 const ES: Dict = {
@@ -151,19 +139,7 @@ const ES: Dict = {
     "chat.quick.bank": "Cuenta bancaria",
     "chat.greeting":
         "Hola. Soy Access Prep. ¿Qué quieres solicitar hoy: tarjeta de crédito, tarjeta asegurada o cuenta bancaria?",
-    "glossary.search": "Buscar un término...",
-    
-    // File upload
-    "chat.upload.label": "Subir Documento",
-    "chat.upload.placeholder": "Seleccionar PDF",
-    "chat.upload.docType.id": "Identificación",
-    "chat.upload.docType.income": "Comprobante de Ingresos",
-    "chat.upload.docType.address": "Comprobante de Domicilio",
-    "chat.upload.docType.label": "Tipo de Documento",
-    "chat.upload.maxSize": "Máximo 10MB",
-    "chat.upload.validating": "Validando documento…",
-    "chat.upload.invalid": "Archivo inválido. Por favor sube un PDF.",
-    "chat.upload.uploading": "Subiendo…"
+    "glossary.search": "Buscar un término..."
 };
 
 export function t(lang: Lang, key: string): string {

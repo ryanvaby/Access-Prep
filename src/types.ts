@@ -17,22 +17,10 @@ export interface IntakeData {
 }
 
 export type ChatRole = "user" | "assistant";
-export type DocumentType = "id" | "income" | "address";
-
-export interface ChatFileAttachment {
-    fileId: string;
-    fileName: string;
-    fileSize: number;
-    documentType: DocumentType;
-    uploadedAt: number;
-    isValid?: boolean;
-    validationMessage?: string;
-}
 
 export interface ChatMessage {
     id: string;
     role: ChatRole;
     content: string;
     ts: number;
-    attachments?: ChatFileAttachment[];
 }
