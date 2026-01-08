@@ -1,3 +1,4 @@
+import ReactMarkdown from "react-markdown";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, IntakeData } from "../types";
 import { t } from "../i18n";
@@ -110,7 +111,7 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                                     m.role === "user" ? "bg-black text-white" : "bg-white text-gray-900 border",
                                 ].join(" ")}
                             >
-                                {m.content}
+                                <ReactMarkdown>{m.content}</ReactMarkdown>
                             </div>
                         </div>
                     ))}
