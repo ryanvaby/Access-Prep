@@ -1,14 +1,19 @@
 import React, { useMemo, useState } from "react"
 import type { GlossaryItem } from "../glossary"
+import type { Lang } from "../i18n"
+import { t } from "../i18n"
+
+
 
 type Props = {
   open: boolean
   onClose: () => void
   items: GlossaryItem[]
+  lang: Lang
   title?: string
 }
 
-export default function GlossaryModal({ open, onClose, items, title = "Glossary" }: Props) {
+export default function GlossaryModal({ open, onClose, items, lang, title = "Glossary" }: Props) {
   const [query, setQuery] = useState("")
 
   const filtered = useMemo(() => {
@@ -73,7 +78,7 @@ export default function GlossaryModal({ open, onClose, items, title = "Glossary"
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search a term..."
+            placeholder={t(lang, "glossary.search")}
             style={{
               width: "100%",
               borderRadius: 12,

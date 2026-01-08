@@ -69,6 +69,7 @@ const EN: Dict = {
     "chat.quick.bank": "Bank account",
     "chat.greeting":
         "Hi, I’m Access Prep. What are you applying for today: a credit card, secured card, or a bank account?",
+    "glossary.search": "Search a term..."
 };
 
 const ES: Dict = {
@@ -138,6 +139,7 @@ const ES: Dict = {
     "chat.quick.bank": "Cuenta bancaria",
     "chat.greeting":
         "Hola. Soy Access Prep. ¿Qué quieres solicitar hoy: tarjeta de crédito, tarjeta asegurada o cuenta bancaria?",
+    "glossary.search": "Buscar un término..."
 };
 
 export function t(lang: Lang, key: string): string {
