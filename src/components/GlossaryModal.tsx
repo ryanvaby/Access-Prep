@@ -3,8 +3,6 @@ import type { GlossaryItem } from "../glossary"
 import type { Lang } from "../i18n"
 import { t } from "../i18n"
 
-
-
 type Props = {
   open: boolean
   onClose: () => void
@@ -13,7 +11,7 @@ type Props = {
   title?: string
 }
 
-export default function GlossaryModal({ open, onClose, items, lang, title = "Glossary" }: Props) {
+export default function GlossaryModal({ open, onClose, items, lang, title = "Financial Glossary" }: Props) {
   const [query, setQuery] = useState("")
 
   const filtered = useMemo(() => {
@@ -35,7 +33,7 @@ export default function GlossaryModal({ open, onClose, items, lang, title = "Glo
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.35)",
+        background: "rgba(0,0,0,0.4)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -46,70 +44,91 @@ export default function GlossaryModal({ open, onClose, items, lang, title = "Glo
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: "min(860px, 100%)",
-          maxHeight: "80vh",
+          width: "min(900px, 100%)",
+          maxHeight: "85vh",
           overflow: "auto",
           background: "white",
-          borderRadius: 16,
-          border: "1px solid rgba(0,0,0,0.12)",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
-          padding: 20
+          borderRadius: 8,
+          border: "1px solid #e5e7eb",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.15)"
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 22 }}>{title}</h2>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-            <button
-              onClick={onClose}
-              style={{
-                borderRadius: 999,
-                padding: "8px 14px",
-                border: "1px solid rgba(0,0,0,0.15)",
-                background: "white",
-                cursor: "pointer"
-              }}
-            >
-              Close
-            </button>
-          </div>
+        <div 
+          style={{ 
+            background: '#004878',
+            padding: "28px 32px",
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "space-between",
+            borderTopLeftRadius: 8,
+            borderTopRightRadius: 8
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 32, fontWeight: 300, color: "white" }}>{title}</h2>
+          <button
+            onClick={onClose}
+            style={{
+              borderRadius: 6,
+              padding: "10px 24px",
+              border: "1px solid rgba(255,255,255,0.3)",
+              background: "rgba(255,255,255,0.1)",
+              color: "white",
+              cursor: "pointer",
+              fontWeight: 500,
+              fontSize: 14,
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.2)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+          >
+            Close
+          </button>
         </div>
 
-        <div style={{ marginTop: 12 }}>
+        <div style={{ padding: "28px 32px" }}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t(lang, "glossary.search")}
             style={{
               width: "100%",
-              borderRadius: 12,
-              padding: "10px 12px",
-              border: "1px solid rgba(0,0,0,0.15)"
+              borderRadius: 6,
+              padding: "14px 16px",
+              border: "1px solid #d1d5db",
+              fontSize: 14,
+              outline: "none",
+              transition: "border-color 0.2s"
             }}
+            onFocus={(e) => e.currentTarget.style.borderColor = '#004878'}
+            onBlur={(e) => e.currentTarget.style.borderColor = '#d1d5db'}
           />
         </div>
 
-        <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-          {filtered.map((it) => (
-            <div
-              key={it.term}
-              style={{
-                border: "1px solid rgba(0,0,0,0.12)",
-                borderRadius: 14,
-                padding: 14
-              }}
-            >
-              <div style={{ fontWeight: 700, fontSize: 16 }}>{it.term}</div>
-              <div style={{ marginTop: 6 }}>{it.definition}</div>
-              {it.example ? (
-                <div style={{ marginTop: 8, opacity: 0.8 }}>
-                  Example: {it.example}
-                </div>
-              ) : null}
-            </div>
-          ))}
-          {filtered.length === 0 ? (
-            <div style={{ opacity: 0.7 }}>No matches.</div>
-          ) : null}
+        <div style={{ padding: "0 32px 32px", maxHeight: "500px", overflowY: "auto" }}>
+          <div style={{ display: "grid", gap: 16 }}>
+            {filtered.map((it) => (
+              <div
+                key={it.term}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  padding: 20,
+                  background: "white"
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 18, color: '#004878', marginBottom: 8 }}>{it.term}</div>
+                <div style={{ color: "#374151", lineHeight: 1.6, fontSize: 15, fontWeight: 300 }}>{it.definition}</div>
+                {it.example ? (
+                  <div style={{ marginTop: 12, fontSize: 14, color: "#6b7280", fontStyle: "italic", paddingLeft: 12, borderLeft: "3px solid #dbeafe" }}>
+                    <strong>Example:</strong> {it.example}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+            {filtered.length === 0 ? (
+              <div style={{ color: "#6b7280", textAlign: "center", padding: 40, fontSize: 15 }}>No matching terms found.</div>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

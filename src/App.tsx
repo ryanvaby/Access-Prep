@@ -7,6 +7,23 @@ import { t } from "./i18n";
 import GlossaryModal from "./components/GlossaryModal.tsx"
 import { glossaryEN, glossaryES } from "./glossary"
 
+// Add CSS animation
+const styles = `
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+`;
 
 export default function App() {
     const [lang, setLang] = useState<Lang>("en");
@@ -15,12 +32,26 @@ export default function App() {
 
 
     return (
-        <div className="min-h-screen bg-gray-100">
-            <div className="max-w-6xl mx-auto px-4 py-10">
-                <div className="mb-8">
-                    <div className="text-sm text-gray-500">{t(lang, "app.kicker")}</div>
-                    <div className="text-3xl font-bold">{t(lang, "app.title")}</div>
-                    <div className="text-gray-600 mt-1">{t(lang, "app.subtitle")}</div>
+        <>
+            <style>{styles}</style>
+            <div className="min-h-screen bg-white relative overflow-hidden">
+            {/* Translucent background image */}
+            <div 
+                className="absolute inset-0 opacity-[0.08] pointer-events-none"
+                style={{
+                    backgroundImage: 'url(https://trainingindustry.com/content/uploads/2023/01/1.16.23-mentoring-.jpg)',
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat'
+                }}
+            />
+            
+            {/* Content overlay */}
+            <div className="relative z-10 max-w-7xl mx-auto px-4 py-8">
+                <div className="mb-12 text-center">
+                    <div className="text-xs uppercase tracking-widest mb-3 font-medium" style={{ color: '#D22B1E' }}>{t(lang, "app.kicker")}</div>
+                    <h1 className="text-5xl font-light mb-4 tracking-tight" style={{ color: '#004878' }}>{t(lang, "app.title")}</h1>
+                    <p className="text-xl text-gray-600 font-light max-w-2xl mx-auto">{t(lang, "app.subtitle")}</p>
                 </div>
 
                 {!intake ? (
@@ -40,6 +71,8 @@ export default function App() {
                 items={lang === "es" ? glossaryES : glossaryEN}
                 lang={lang}
                 />
-        </div>
+            </div>
+        </>
     );
 }
+
