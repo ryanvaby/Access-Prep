@@ -23,7 +23,8 @@ export default function IntakeForm({ lang, onLangChange, onSubmit }: Props) {
         creditHistory: "unknown",
         incomeType: "student",
         proofOfAddress: "not_sure",
-        idType: "prefer_not_say",
+        taxId: "prefer_not_say",
+        applyingFor: "credit_card",
     });
 
     const pathways: Array<{ value: Pathway; label: string; desc: string }> = [
@@ -155,8 +156,8 @@ export default function IntakeForm({ lang, onLangChange, onSubmit }: Props) {
                         <div>
                             <label className="block text-sm font-medium text-gray-900">{t(lang, "intake.idType")}</label>
                             <select
-                                value={form.idType}
-                                onChange={(e) => update("idType", e.target.value as IntakeData["idType"])}
+                                value={form.taxId}
+                                onChange={(e) => update("taxId", e.target.value as IntakeData["taxId"])}
                                 className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
                             >
                                 <option value="prefer_not_say">{t(lang, "opt.id.prefer")}</option>

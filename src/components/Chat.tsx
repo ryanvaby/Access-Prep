@@ -32,10 +32,86 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
     const [uploadingFile, setUploadingFile] = useState(false);
     const bottomRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    
+    // Track required and validated documents
+    const [requiredDocuments, setRequiredDocuments] = useState<string[]>([]);
+    const [validatedFiles, setValidatedFiles] = useState<ChatFileAttachment[]>([]); // CHANGED: Store full file objects
+    const [documentsExplanation, setDocumentsExplanation] = useState("");
+    const [documentsInitialized, setDocumentsInitialized] = useState(false);
+
+    // Initialize required documents list ONLY when user asks about a specific application
+    async function initializeDocuments() {
+        // Only initialize once
+        if (documentsInitialized) return;
+        
+        try {
+            const res = await fetch("http://127.0.0.1:5000/api/determine-required-documents", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    session_id: sessionIdRef.current,
+                    pathway: intake.pathway,
+                    location: intake.state,
+                    credit_history: intake.creditHistory,
+                    proof_of_address: intake.proofOfAddress,
+                    tax_id: intake.taxId,
+                    income_type: intake.incomeType,
+                    applying_for: intake.applyingFor,
+                    response_language: intake.language,
+                }),
+            });
+
+            if (res.ok) {
+                const data = (await res.json()) as { required_documents: string[]; explanation: string };
+                setRequiredDocuments(data.required_documents);
+                setDocumentsExplanation(data.explanation);
+                setDocumentsInitialized(true);
+                
+                // Add message showing required documents
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: uid(),
+                        role: "assistant",
+                        ts: Date.now(),
+                        content: `**Required Documents:**\n${data.required_documents.map((d) => `• ${d.replace(/_/g, " ")}`).join("\n")}\n\n${data.explanation}`,
+                    },
+                ]);
+            }
+        } catch (err) {
+            console.error("Error initializing documents:", err);
+        }
+    }
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, loading]);
+
+    // Sync validated documents from backend session store
+    async function syncValidatedDocuments() {
+        try {
+            const res = await fetch("http://127.0.0.1:5000/api/session-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: sessionIdRef.current }),
+            });
+            if (res.ok) {
+                const data = (await res.json()) as { validated_documents: string[] };
+                const synced = (data.validated_documents || []).map((doc_type: string) => ({
+                    fileId: "synced",
+                    fileName: `${doc_type}.pdf`,
+                    documentType: doc_type,
+                    isValid: true,
+                    uploadedAt: Date.now(),
+                    fileSize: 0,
+                    validationMessage: "✓ Validated",
+                }));
+                setValidatedFiles(synced);
+            }
+        } catch (err) {
+            console.error("Error syncing validated documents:", err);
+        }
+    }
 
     function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0];
@@ -70,6 +146,14 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = (await res.json()) as ChatFileAttachment;
 
+            // CHANGED: Track this document in our validated files array and compute nextValidated locally
+            let nextValidated = validatedFiles;
+            if (data.isValid) {
+                const filtered = validatedFiles.filter((f) => f.documentType !== data.documentType);
+                nextValidated = [...filtered, data];
+                setValidatedFiles(nextValidated);
+            }
+
             // Create a user message with the attachment
             const userMsg: ChatMessage = {
                 id: uid(),
@@ -83,20 +167,23 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
             setSelectedFile(null);
             if (fileInputRef.current) fileInputRef.current.value = "";
 
-            // Now send to chat with the validated file info
+            // CHANGED: Send ALL validated files to chat
             setLoading(true);
             const chatRes = await fetch("http://127.0.0.1:5000/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    student_status: intake.pathway,
+                    session_id: sessionIdRef.current,
+                    pathway: intake.pathway,
                     location: intake.state,
                     credit_history: intake.creditHistory,
-                    id_type: intake.idType,
+                    proof_of_address: intake.proofOfAddress,
+                    tax_id: intake.taxId,
                     income_type: intake.incomeType,
+                    applying_for: intake.applyingFor,
                     response_language: intake.language,
-                    session_id: sessionIdRef.current,
-                    validated_files: [data],
+                    // Send only document type strings, using the locally computed nextValidated to avoid stale state
+                    validated_files: nextValidated.map((f) => f.documentType),
                     messages: [...messages, userMsg].map((m) => ({
                         role: m.role,
                         content: m.content,
@@ -112,6 +199,23 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                 ...prev,
                 { id: uid(), role: "assistant", content: chatData.reply, ts: Date.now() },
             ]);
+            
+            // Sync validated documents from backend to ensure frontend state matches
+            await syncValidatedDocuments();
+            
+            // Auto-advance document type dropdown to next pending document
+            const sessionStatusRes = await fetch("http://127.0.0.1:5000/api/session-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: sessionIdRef.current }),
+            });
+            if (sessionStatusRes.ok) {
+                const statusData = (await sessionStatusRes.json()) as { pending_documents: string[] };
+                if (statusData.pending_documents && statusData.pending_documents.length > 0) {
+                    const nextDoc = statusData.pending_documents[0];
+                    setDocumentType(nextDoc as DocumentType);
+                }
+            }
         } catch (err) {
             const fallback =
                 lang === "es"
@@ -124,9 +228,17 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
         }
     }
 
-    async function send(text: string) {
+    async function send(text: string, overrideApplyingFor?: string) {
         const trimmed = text.trim();
         if (!trimmed || loading) return;
+
+        // Initialize documents when user starts asking about application
+        if (!documentsInitialized) {
+            await initializeDocuments();
+        }
+
+        // Ensure local validatedFiles reflect backend session state
+        await syncValidatedDocuments();
 
         const userMsg: ChatMessage = { id: uid(), role: "user", content: trimmed, ts: Date.now() };
         setMessages((prev) => [...prev, userMsg]);
@@ -138,13 +250,17 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    student_status: intake.pathway,
+                    session_id: sessionIdRef.current,
+                    pathway: intake.pathway,
                     location: intake.state,
                     credit_history: intake.creditHistory,
-                    id_type: intake.idType,
+                    proof_of_address: intake.proofOfAddress,
+                    tax_id: intake.taxId,
                     income_type: intake.incomeType,
+                    applying_for: overrideApplyingFor || intake.applyingFor,
                     response_language: intake.language,
-                    session_id: sessionIdRef.current,
+                    // Send only document type strings so backend sees a canonical list
+                    validated_files: validatedFiles.map((f) => f.documentType), // CHANGED: Send types only
                     messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
                 }),
             });
@@ -225,21 +341,31 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                 </div>
 
                 <div className="px-5 py-4 bg-white border-t">
+                    {/* ADDED: Show validated documents indicator */}
+                    {validatedFiles.length > 0 && (
+                        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-xl">
+                            <div className="text-xs font-medium text-green-800 mb-1">✓ Validated Documents:</div>
+                            <div className="text-xs text-green-700">
+                                {validatedFiles.map(f => f.documentType.replace(/_/g, ' ')).join(', ')}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex flex-wrap gap-2 mb-3">
                         <button
-                            onClick={() => send(t(lang, "chat.quick.credit"))}
+                            onClick={() => send(t(lang, "chat.quick.credit"), "credit_card")}
                             className="text-sm rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50"
                         >
                             {t(lang, "chat.quick.credit")}
                         </button>
                         <button
-                            onClick={() => send(t(lang, "chat.quick.secured"))}
+                            onClick={() => send(t(lang, "chat.quick.secured"), "secured_card")}
                             className="text-sm rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50"
                         >
                             {t(lang, "chat.quick.secured")}
                         </button>
                         <button
-                            onClick={() => send(t(lang, "chat.quick.bank"))}
+                            onClick={() => send(t(lang, "chat.quick.bank"), "bank_account")}
                             className="text-sm rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50"
                         >
                             {t(lang, "chat.quick.bank")}
@@ -255,6 +381,8 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                             <option value="id">{t(lang, "chat.upload.docType.id")}</option>
                             <option value="income">{t(lang, "chat.upload.docType.income")}</option>
                             <option value="address">{t(lang, "chat.upload.docType.address")}</option>
+                            <option value="enrollment">Proof of Enrollment</option>
+                            <option value="financial_support">Financial Support</option>
                         </select>
 
                         <input

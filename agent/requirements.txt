@@ -3,3 +3,7 @@ langchain
 langchain-google-genai
 flask
 flask-cors
+pymupdf
+pytesseract
+Pillow
+pdf2image
