@@ -1,6 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, IntakeData } from "../types";
+import type { ChatMessage, IntakeData, DocumentType, ChatFileAttachment } from "../types";
 import { t } from "../i18n";
 
 type Props = {
@@ -13,8 +13,13 @@ function uid() {
     return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
+function generateSessionId() {
+    return "session_" + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+}
+
 export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
     const lang = intake.language;
+    const sessionIdRef = useRef(generateSessionId());
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => [
         { id: uid(), role: "assistant", ts: Date.now(), content: t(lang, "chat.greeting") },
@@ -22,15 +27,218 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
 
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [documentType, setDocumentType] = useState<DocumentType>("id");
+    const [uploadingFile, setUploadingFile] = useState(false);
     const bottomRef = useRef<HTMLDivElement | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    
+    // Track required and validated documents
+    const [requiredDocuments, setRequiredDocuments] = useState<string[]>([]);
+    const [validatedFiles, setValidatedFiles] = useState<ChatFileAttachment[]>([]); // CHANGED: Store full file objects
+    const [documentsExplanation, setDocumentsExplanation] = useState("");
+    const [documentsInitialized, setDocumentsInitialized] = useState(false);
+
+    // Initialize required documents list ONLY when user asks about a specific application
+    async function initializeDocuments() {
+        // Only initialize once
+        if (documentsInitialized) return;
+        
+        try {
+            const res = await fetch("http://127.0.0.1:5000/api/determine-required-documents", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    session_id: sessionIdRef.current,
+                    pathway: intake.pathway,
+                    location: intake.state,
+                    credit_history: intake.creditHistory,
+                    proof_of_address: intake.proofOfAddress,
+                    tax_id: intake.taxId,
+                    income_type: intake.incomeType,
+                    applying_for: intake.applyingFor,
+                    response_language: intake.language,
+                }),
+            });
+
+            if (res.ok) {
+                const data = (await res.json()) as { required_documents: string[]; explanation: string };
+                setRequiredDocuments(data.required_documents);
+                setDocumentsExplanation(data.explanation);
+                setDocumentsInitialized(true);
+                
+                // Add message showing required documents
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: uid(),
+                        role: "assistant",
+                        ts: Date.now(),
+                        content: `**Required Documents:**\n${data.required_documents.map((d) => `• ${d.replace(/_/g, " ")}`).join("\n")}\n\n${data.explanation}`,
+                    },
+                ]);
+            }
+        } catch (err) {
+            console.error("Error initializing documents:", err);
+        }
+    }
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, loading]);
 
-    async function send(text: string) {
+    // Sync validated documents from backend session store
+    async function syncValidatedDocuments() {
+        try {
+            const res = await fetch("http://127.0.0.1:5000/api/session-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: sessionIdRef.current }),
+            });
+            if (res.ok) {
+                const data = (await res.json()) as { validated_documents: string[] };
+                const synced = (data.validated_documents || []).map((doc_type: string) => ({
+                    fileId: "synced",
+                    fileName: `${doc_type}.pdf`,
+                    documentType: doc_type,
+                    isValid: true,
+                    uploadedAt: Date.now(),
+                    fileSize: 0,
+                    validationMessage: "✓ Validated",
+                }));
+                setValidatedFiles(synced);
+            }
+        } catch (err) {
+            console.error("Error syncing validated documents:", err);
+        }
+    }
+
+    function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (file.type !== "application/pdf") {
+                alert(t(lang, "chat.upload.invalid"));
+                return;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                alert("File too large. " + t(lang, "chat.upload.maxSize"));
+                return;
+            }
+            setSelectedFile(file);
+        }
+    }
+
+    async function uploadFile() {
+        if (!selectedFile) return;
+
+        setUploadingFile(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", selectedFile);
+            formData.append("document_type", documentType);
+            formData.append("session_id", sessionIdRef.current);
+
+            const res = await fetch("http://127.0.0.1:5000/api/upload", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = (await res.json()) as ChatFileAttachment;
+
+            // CHANGED: Track this document in our validated files array and compute nextValidated locally
+            let nextValidated = validatedFiles;
+            if (data.isValid) {
+                const filtered = validatedFiles.filter((f) => f.documentType !== data.documentType);
+                nextValidated = [...filtered, data];
+                setValidatedFiles(nextValidated);
+            }
+
+            // Create a user message with the attachment
+            const userMsg: ChatMessage = {
+                id: uid(),
+                role: "user",
+                content: `[Document uploaded: ${data.fileName}]`,
+                ts: Date.now(),
+                attachments: [data],
+            };
+
+            setMessages((prev) => [...prev, userMsg]);
+            setSelectedFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+
+            // CHANGED: Send ALL validated files to chat
+            setLoading(true);
+            const chatRes = await fetch("http://127.0.0.1:5000/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    session_id: sessionIdRef.current,
+                    pathway: intake.pathway,
+                    location: intake.state,
+                    credit_history: intake.creditHistory,
+                    proof_of_address: intake.proofOfAddress,
+                    tax_id: intake.taxId,
+                    income_type: intake.incomeType,
+                    applying_for: intake.applyingFor,
+                    response_language: intake.language,
+                    // Send only document type strings, using the locally computed nextValidated to avoid stale state
+                    validated_files: nextValidated.map((f) => f.documentType),
+                    messages: [...messages, userMsg].map((m) => ({
+                        role: m.role,
+                        content: m.content,
+                        attachments: m.attachments,
+                    })),
+                }),
+            });
+
+            if (!chatRes.ok) throw new Error(`HTTP ${chatRes.status}`);
+            const chatData = (await chatRes.json()) as { reply: string };
+
+            setMessages((prev) => [
+                ...prev,
+                { id: uid(), role: "assistant", content: chatData.reply, ts: Date.now() },
+            ]);
+            
+            // Sync validated documents from backend to ensure frontend state matches
+            await syncValidatedDocuments();
+            
+            // Auto-advance document type dropdown to next pending document
+            const sessionStatusRes = await fetch("http://127.0.0.1:5000/api/session-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: sessionIdRef.current }),
+            });
+            if (sessionStatusRes.ok) {
+                const statusData = (await sessionStatusRes.json()) as { pending_documents: string[] };
+                if (statusData.pending_documents && statusData.pending_documents.length > 0) {
+                    const nextDoc = statusData.pending_documents[0];
+                    setDocumentType(nextDoc as DocumentType);
+                }
+            }
+        } catch (err) {
+            const fallback =
+                lang === "es"
+                    ? "Hubo un error al procesar el documento. Por favor intenta de nuevo."
+                    : "There was an error processing the document. Please try again.";
+            setMessages((prev) => [...prev, { id: uid(), role: "assistant", content: fallback, ts: Date.now() }]);
+        } finally {
+            setUploadingFile(false);
+            setLoading(false);
+        }
+    }
+
+    async function send(text: string, overrideApplyingFor?: string) {
         const trimmed = text.trim();
         if (!trimmed || loading) return;
+
+        // Initialize documents when user starts asking about application
+        if (!documentsInitialized) {
+            await initializeDocuments();
+        }
+
+        // Ensure local validatedFiles reflect backend session state
+        await syncValidatedDocuments();
 
         const userMsg: ChatMessage = { id: uid(), role: "user", content: trimmed, ts: Date.now() };
         setMessages((prev) => [...prev, userMsg]);
@@ -38,16 +246,21 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
         setLoading(true);
 
         try {
-            const res = await fetch("http://localhost:5000/api/chat", {
+            const res = await fetch("http://127.0.0.1:5000/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    student_status: intake.pathway,
+                    session_id: sessionIdRef.current,
+                    pathway: intake.pathway,
                     location: intake.state,
                     credit_history: intake.creditHistory,
-                    id_type: intake.idType,
+                    proof_of_address: intake.proofOfAddress,
+                    tax_id: intake.taxId,
                     income_type: intake.incomeType,
+                    applying_for: overrideApplyingFor || intake.applyingFor,
                     response_language: intake.language,
+                    // Send only document type strings so backend sees a canonical list
+                    validated_files: validatedFiles.map((f) => f.documentType), // CHANGED: Send types only
                     messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
                 }),
             });
@@ -128,26 +341,78 @@ export default function Chat({ intake, onReset, onOpenGlossary }: Props) {
                 </div>
 
                 <div className="px-5 py-4 bg-white border-t">
+                    {/* ADDED: Show validated documents indicator */}
+                    {validatedFiles.length > 0 && (
+                        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-xl">
+                            <div className="text-xs font-medium text-green-800 mb-1">✓ Validated Documents:</div>
+                            <div className="text-xs text-green-700">
+                                {validatedFiles.map(f => f.documentType.replace(/_/g, ' ')).join(', ')}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex flex-wrap gap-2 mb-3">
                         <button
-                            onClick={() => send(t(lang, "chat.quick.credit"))}
+                            onClick={() => send(t(lang, "chat.quick.credit"), "credit_card")}
                             className="text-sm rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50"
                         >
                             {t(lang, "chat.quick.credit")}
                         </button>
                         <button
-                            onClick={() => send(t(lang, "chat.quick.secured"))}
+                            onClick={() => send(t(lang, "chat.quick.secured"), "secured_card")}
                             className="text-sm rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50"
                         >
                             {t(lang, "chat.quick.secured")}
                         </button>
                         <button
-                            onClick={() => send(t(lang, "chat.quick.bank"))}
+                            onClick={() => send(t(lang, "chat.quick.bank"), "bank_account")}
                             className="text-sm rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50"
                         >
                             {t(lang, "chat.quick.bank")}
                         </button>
                     </div>
+
+                    <div className="mb-3 flex flex-col sm:flex-row gap-2">
+                        <select
+                            value={documentType}
+                            onChange={(e) => setDocumentType(e.target.value as DocumentType)}
+                            className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                        >
+                            <option value="id">{t(lang, "chat.upload.docType.id")}</option>
+                            <option value="income">{t(lang, "chat.upload.docType.income")}</option>
+                            <option value="address">{t(lang, "chat.upload.docType.address")}</option>
+                            <option value="enrollment">Proof of Enrollment</option>
+                            <option value="financial_support">Financial Support</option>
+                        </select>
+
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".pdf"
+                            onChange={handleFileSelect}
+                            disabled={uploadingFile || loading}
+                            className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black disabled:bg-gray-100"
+                        />
+
+                        <button
+                            onClick={uploadFile}
+                            disabled={!selectedFile || uploadingFile || loading}
+                            className={[
+                                "rounded-xl px-4 py-2 text-sm font-medium text-white",
+                                selectedFile && !uploadingFile && !loading
+                                    ? "bg-black hover:bg-gray-800"
+                                    : "bg-gray-300 cursor-not-allowed",
+                            ].join(" ")}
+                        >
+                            {uploadingFile ? t(lang, "chat.upload.uploading") : t(lang, "chat.upload.label")}
+                        </button>
+                    </div>
+
+                    {selectedFile && (
+                        <div className="mb-3 text-xs text-gray-600">
+                            {t(lang, "chat.upload.placeholder")}: {selectedFile.name}
+                        </div>
+                    )}
 
                     <form
                         onSubmit={(e) => {

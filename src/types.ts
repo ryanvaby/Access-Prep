@@ -4,7 +4,8 @@ export type Pathway = "student" | "newcomer" | "gig" | "seasonal" | "not_sure";
 export type CreditHistory = "none" | "thin" | "has" | "unknown";
 export type IncomeType = "student" | "w2" | "gig" | "cash" | "benefits" | "other";
 export type ProofOfAddress = "yes" | "no" | "not_sure";
-export type IdType = "ssn" | "itin" | "prefer_not_say";
+export type TaxId = "ssn" | "itin" | "prefer_not_say";
+export type ApplyingFor = "credit_card" | "secured_card" | "bank_account";
 
 export interface IntakeData {
     pathway: Pathway;
@@ -13,14 +14,27 @@ export interface IntakeData {
     creditHistory: CreditHistory;
     incomeType: IncomeType;
     proofOfAddress: ProofOfAddress;
-    idType: IdType;
+    taxId: TaxId;
+    applyingFor: ApplyingFor;
 }
 
 export type ChatRole = "user" | "assistant";
+export type DocumentType = "id" | "income" | "address" | "enrollment" | "financial_support";
+
+export interface ChatFileAttachment {
+    fileId: string;
+    fileName: string;
+    fileSize: number;
+    documentType: DocumentType;
+    uploadedAt: number;
+    isValid?: boolean;
+    validationMessage?: string;
+}
 
 export interface ChatMessage {
     id: string;
     role: ChatRole;
     content: string;
     ts: number;
+    attachments?: ChatFileAttachment[];
 }
